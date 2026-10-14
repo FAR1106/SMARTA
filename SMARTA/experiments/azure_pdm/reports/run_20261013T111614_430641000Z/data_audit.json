@@ -1,0 +1,60 @@
+{
+  "row_counts": {
+    "telemetry": 876100,
+    "failures": 761,
+    "errors": 3919,
+    "maintenance": 3286,
+    "machines": 100
+  },
+  "telemetry": {
+    "machines": 100,
+    "rows_per_machine_min": 8761,
+    "rows_per_machine_max": 8761,
+    "start": "2015-01-01T06:00:00",
+    "end": "2016-01-01T06:00:00",
+    "cadence_hours": [
+      1.0
+    ]
+  },
+  "failure_labels": {
+    "machines_with_failures": 98,
+    "counts_by_component": {
+      "comp1": 192,
+      "comp2": 259,
+      "comp3": 131,
+      "comp4": 179
+    },
+    "unique_machine_failure_hours": 719,
+    "multi_component_failure_hours": 42,
+    "unmatched_exact_maintenance_rows": 18,
+    "unmatched_failure_timestamps": [
+      "2015-01-02 03:00:00"
+    ]
+  },
+  "maintenance": {
+    "not_in_failure_table_exact_key": 2543,
+    "start": "2014-06-01T06:00:00",
+    "end": "2016-01-01T06:00:00"
+  },
+  "errors": {
+    "counts_by_code": {
+      "error1": 1010,
+      "error2": 988,
+      "error3": 838,
+      "error4": 727,
+      "error5": 356
+    },
+    "same_machine_hour_excess_rows": 303
+  },
+  "machines": {
+    "model_counts": {
+      "model1": 16,
+      "model2": 17,
+      "model3": 35,
+      "model4": 32
+    },
+    "age_min": 0,
+    "age_max": 20,
+    "age_used": false
+  }
+}

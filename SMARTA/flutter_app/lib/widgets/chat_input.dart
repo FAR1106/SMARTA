@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../theme.dart';
+import '../theme.dart';
 
 class ChatInput extends StatefulWidget {
   final ValueChanged<String> onSend;
@@ -42,13 +42,14 @@ class _ChatInputState extends State<ChatInput> {
 
   @override
   Widget build(BuildContext context) {
+    final canSend = _controller.text.trim().isNotEmpty && !widget.isSending;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(22, 12, 22, 18),
       decoration: const BoxDecoration(
         color: AppTheme.sidebar,
         border: Border(
           top: BorderSide(
-            color: Colors.white10,
+            color: AppTheme.border,
             width: 1,
           ),
         ),
@@ -71,16 +72,20 @@ class _ChatInputState extends State<ChatInput> {
               child: TextField(
                 controller: _controller,
                 focusNode: _focusNode,
+                onChanged: (_) => setState(() {}),
                 minLines: 1,
                 maxLines: 6,
                 textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _handleSend(),
+                onSubmitted: (_) {
+                  if (!HardwareKeyboard.instance.isShiftPressed) {
+                    _handleSend();
+                  }
+                },
                 decoration: const InputDecoration(
                   hintText: "Ask SMARTA about a machine issue...",
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 14,
-                  ),
+                  prefixIcon: Icon(Icons.chat_bubble_outline, size: 19),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
               ),
             ),
@@ -90,7 +95,7 @@ class _ChatInputState extends State<ChatInput> {
             width: 48,
             height: 48,
             child: ElevatedButton(
-              onPressed: widget.isSending ? null : _handleSend,
+              onPressed: canSend ? _handleSend : null,
               style: ElevatedButton.styleFrom(
                 padding: EdgeInsets.zero,
                 shape: const CircleBorder(),

@@ -121,8 +121,61 @@ class Ai4iTests(unittest.TestCase):
                 predictor.predict(valid)
             valid["Type"] = "M"
             valid["Tool wear [min]"] = 99999
-            with self.assertRaisesRegex(ValueError, "between"):
+            accepted = predictor.predict(valid)
+            self.assertEqual(accepted["input_features"]["Tool wear [min]"], 99999.0)
+            self.assertIn("Tool wear [min]", accepted["out_of_training_range"])
+            with self.assertRaisesRegex(ValueError, "negative"):
+                valid["Tool wear [min]"] = -1
                 predictor.predict(valid)
+
+    def test_non_numeric_and_non_finite_feature_values_are_rejected(self):
+        row = self.frame.iloc[0]
+        for value, message in (("not-a-number", "numeric"), (float("nan"), "finite"),
+                               (float("inf"), "finite")):
+            features = {name: row[name] for name in FEATURES}
+            features["Air temperature [K]"] = value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, message):
+                Predictor().predict(features)
+
+    def test_inference_accepts_finite_out_of_range_inputs_and_reports_them(self):
+        row = self.frame.iloc[0]
+        features = {name: row[name] for name in FEATURES}
+        features["Air temperature [K]"] = 310.0
+        features["Process temperature [K]"] = 299.0
+        features["Rotational speed [rpm]"] = 500.0
+        features["Torque [Nm]"] = 90.0
+        features["Tool wear [min]"] = 300.0
+        result = Predictor().predict(features)
+        self.assertIn("Air temperature [K]", result["out_of_training_range"])
+        self.assertIn("Process temperature [K]", result["out_of_training_range"])
+        self.assertIn("Rotational speed [rpm]", result["out_of_training_range"])
+        self.assertIn("Torque [Nm]", result["out_of_training_range"])
+        self.assertIn("Tool wear [min]", result["out_of_training_range"])
+        self.assertEqual(result["input_features"]["Process temperature [K]"], 299.0)
+
+    def test_training_range_endpoints_are_not_warned(self):
+        row = self.frame.iloc[0]
+        features = {name: row[name] for name in FEATURES}
+        features.update({
+            "Air temperature [K]": 295.3,
+            "Process temperature [K]": 305.7,
+            "Rotational speed [rpm]": 1168,
+            "Torque [Nm]": 3.8,
+            "Tool wear [min]": 0,
+        })
+        result = Predictor().predict(features)
+        self.assertEqual(result["out_of_training_range"], {})
+
+    def test_physical_invalid_temperature_and_wear_are_rejected(self):
+        row = self.frame.iloc[0]
+        features = {name: row[name] for name in FEATURES}
+        for name, value in (("Air temperature [K]", 0),
+                            ("Process temperature [K]", -2),
+                            ("Tool wear [min]", -0.1)):
+            invalid = dict(features)
+            invalid[name] = value
+            with self.subTest(feature=name), self.assertRaises(ValueError):
+                Predictor().predict(invalid)
 
     def test_real_model_predicts_and_rare_mode_remains_unsupported(self):
         report_path = Path(__file__).resolve().parents[1] / "models" / "ai4i_metrics.json"
@@ -165,6 +218,71 @@ class Ai4iTests(unittest.TestCase):
             self.assertLessEqual(mode["score"], 1)
             self.assertEqual(mode["score_type"], "uncalibrated_random_forest_score")
 
+    def test_prediction_api_accepts_process_temperature_below_300_kelvin(self):
+        request = PredictRequest(machine_id="Below-300K", features={
+            "product_type": "L", "air_temperature_k": 290.0,
+            "process_temperature_k": 299.0, "rotational_speed_rpm": 1000,
+            "torque_nm": 80.0, "tool_wear_min": 260.0,
+        })
+        with patch("api.retrieve", return_value=[]):
+            response = predict(request)
+        self.assertEqual(response.prediction["input_features"]["Process temperature [K]"], 299.0)
+        self.assertIn("Process temperature [K]", response.prediction["out_of_training_range"])
+        self.assertIn("Air temperature [K]", response.prediction["out_of_training_range"])
+
+    def test_inference_scores_and_labels_match_loaded_estimator_outputs(self):
+        bundle = Predictor().load()
+        cases = [
+            {
+                "Type": "M",
+                "Air temperature [K]": 298.1,
+                "Process temperature [K]": 308.6,
+                "Rotational speed [rpm]": 1551,
+                "Torque [Nm]": 42.8,
+                "Tool wear [min]": 20,
+            },
+            {
+                "Type": "H",
+                "Air temperature [K]": 304.5,
+                "Process temperature [K]": 313.8,
+                "Rotational speed [rpm]": 1168,
+                "Torque [Nm]": 76.6,
+                "Tool wear [min]": 253,
+            },
+        ]
+        for features in cases:
+            x = pd.DataFrame([features], columns=FEATURES)
+            actual = Predictor().predict(features)
+            machine = bundle["machine_failure"]
+            self.assertEqual(
+                actual["machine_failure"]["classification"],
+                int(machine.predict(x)[0]),
+            )
+            self.assertAlmostEqual(
+                actual["machine_failure"]["score"],
+                float(machine.predict_proba(x)[0, 1]),
+                places=14,
+            )
+            for mode, estimator in bundle["failure_modes"].items():
+                self.assertEqual(
+                    actual["failure_modes"][mode]["classification"],
+                    int(estimator.predict(x)[0]),
+                )
+                self.assertAlmostEqual(
+                    actual["failure_modes"][mode]["score"],
+                    float(estimator.predict_proba(x)[0, 1]),
+                    places=14,
+                )
+        ordinary = Predictor().predict(cases[0])
+        edge = Predictor().predict(cases[1])
+        self.assertEqual(ordinary["machine_failure"]["score"], 0.0)
+        self.assertEqual(ordinary["machine_failure"]["classification"], 0)
+        self.assertEqual(edge["machine_failure"]["classification"], 1)
+        self.assertEqual(edge["failure_modes"]["OSF"]["classification"], 1)
+        self.assertGreater(edge["failure_modes"]["OSF"]["score"], 0.5)
+        self.assertEqual(edge["failure_modes"]["TWF"]["classification"], 0)
+        self.assertLess(edge["failure_modes"]["TWF"]["score"], 0.5)
+
     def test_metadata_and_existing_chat_contract_remain_available(self):
         metadata = predictive_model_metadata()
         self.assertTrue(metadata["ready"])
@@ -191,9 +309,9 @@ class Ai4iTests(unittest.TestCase):
             }]), patch("api.generate_answer", side_effect=RuntimeError("credential-bearing internal detail")):
                 with self.assertRaises(HTTPException) as error:
                     chat(ChatRequest(question="Explain this maintenance issue"))
-            self.assertEqual(error.exception.status_code, 500)
-            self.assertNotIn("credential-bearing", error.exception.detail)
-            self.assertEqual(error.exception.detail, "SMARTA could not generate a response. Please try again later.")
+            self.assertEqual(error.exception.status_code, 502)
+            self.assertNotIn("credential-bearing", str(error.exception.detail))
+            self.assertEqual(error.exception.detail["code"], "generation_failed")
         finally:
             api._corpus_status = old_status
 

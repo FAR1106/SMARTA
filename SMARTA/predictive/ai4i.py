@@ -284,6 +284,7 @@ class Predictor:
         if str(features["Type"]) not in bundle["allowed_types"]:
             raise ValueError("Type must be one of L, M, or H.")
         record = {name: features[name] for name in FEATURES}
+        out_of_training_range: dict[str, dict[str, Any]] = {}
         for name in NUMERIC_FEATURES:
             try:
                 value = float(record[name])
@@ -291,9 +292,16 @@ class Predictor:
                 raise ValueError(f"{name} must be numeric.") from exc
             if not math.isfinite(value):
                 raise ValueError(f"{name} must be finite.")
+            if name in ("Air temperature [K]", "Process temperature [K]") and value <= 0:
+                raise ValueError(f"{name} must be above absolute zero (0 K).")
+            if name == "Tool wear [min]" and value < 0:
+                raise ValueError("Tool wear [min] cannot be negative.")
             low, high = bundle["feature_ranges"][name]
             if value < low or value > high:
-                raise ValueError(f"{name} must be between {low:g} and {high:g} for the training data range.")
+                out_of_training_range[name] = {
+                    "value": value,
+                    "training_range": [low, high],
+                }
             record[name] = value
         x = pd.DataFrame([record], columns=FEATURES)
         machine_score = float(bundle["machine_failure"].predict_proba(x)[0, 1])
@@ -316,6 +324,7 @@ class Predictor:
             "failure_modes": mode_results,
             "unsupported_failure_modes": bundle.get("unsupported_modes", {}),
             "input_features": record,
+            "out_of_training_range": out_of_training_range,
             "limitations": "AI4I synthetic-data classification only; not a future failure date or a real-machine forecast.",
         }
 

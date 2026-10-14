@@ -1,0 +1,1 @@
+This training attempt was manually stopped before completion because an event-history alignment issue was found and corrected. It has no evaluation.json or report and is not a valid experiment result. Its partial artifact files are retained to preserve run history; use the later completed run directory only for metrics.

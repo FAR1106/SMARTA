@@ -88,6 +88,28 @@ def corpus_stats(db: sqlite3.Connection | None = None) -> dict[str, int]:
             db.close()
 
 
+def list_maintenance_records(limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    """Read paginated maintenance rows from SMARTA's local SQLite corpus."""
+    if not 1 <= limit <= 100:
+        raise ValueError("limit must be between 1 and 100")
+    if offset < 0:
+        raise ValueError("offset must be non-negative")
+    with _connect() as db:
+        total = int(db.execute("SELECT COUNT(*) FROM maintenance_logs").fetchone()[0])
+        records = db.execute(
+            """SELECT id, machine, fault, symptoms, cause, action,
+                      engineer_notes, source
+               FROM maintenance_logs ORDER BY id DESC LIMIT ? OFFSET ?""",
+            (limit, offset),
+        ).fetchall()
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": [dict(record) for record in records],
+        }
+
+
 def _fts_expression(query: str) -> str:
     terms = re.findall(r"[\w-]+", query, flags=re.UNICODE)
     # OR makes the retriever useful for natural-language questions; BM25 ranks
@@ -126,16 +148,26 @@ def retrieve(query: str, limit: int = 6) -> list[dict[str, Any]]:
         stop_words = {"what", "why", "how", "is", "are", "the", "a", "an", "for", "of", "to", "in", "on", "with", "and", "or", "my", "it", "this", "that", "could", "would", "should", "recorded", "cause", "action"}
         query_terms = [term for term in query_terms if term not in stop_words]
         idf: dict[str, float] = {}
-        for term in query_terms:
+        if query_terms:
+            # Keep the same per-token FTS document-frequency calculation, but
+            # submit it as one SQLite statement instead of one round trip per
+            # token. No embedding is used by this lexical retrieval pipeline.
+            df_query = " UNION ALL ".join(
+                "SELECT ? AS term, (SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH ?) AS df"
+                for _ in query_terms
+            )
+            df_params = tuple(
+                value for term in query_terms for value in (term, f'"{term}"')
+            )
             try:
-                df = db.execute(
-                    "SELECT COUNT(*) FROM documents_fts WHERE documents_fts MATCH ?",
-                    (f'"{term}"',),
-                ).fetchone()[0]
+                df_rows = db.execute(df_query, df_params).fetchall()
             except sqlite3.OperationalError:
-                df = 0
-            # Unseen identifier tokens add no lexical-search penalty.
-            idf[term] = math.log((total_docs + 1) / (df + 1)) if df else 0.0
+                df_rows = []
+            document_frequency = {row["term"]: row["df"] for row in df_rows}
+            for term in query_terms:
+                df = document_frequency.get(term, 0)
+                # Unseen identifier tokens add no lexical-search penalty.
+                idf[term] = math.log((total_docs + 1) / (df + 1)) if df else 0.0
 
         ranked = []
         equipment_terms = {"compressor", "pump", "boiler", "lathe", "conveyor", "motor", "transformer", "refrigerator", "forklift"}

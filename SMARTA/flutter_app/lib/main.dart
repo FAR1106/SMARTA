@@ -17,7 +17,7 @@ class SmartaApp extends StatelessWidget {
     return MaterialApp(
       title: 'SMARTA',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
       home: const HomeScreen(),
     );
   }

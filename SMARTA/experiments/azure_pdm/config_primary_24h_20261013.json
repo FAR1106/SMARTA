@@ -1,0 +1,49 @@
+{
+  "experiment_name": "azure_pdm_primary_24h_any_logged_failure",
+  "experiment_version": "1.0.0",
+  "dataset_zip": "/Users/ashishsachinas/Downloads/archive.zip",
+  "expected_dataset_zip_sha256": "7575444d4d605b1f7155ab937cf541243afe07fce1afba998bf4195e8e84e1eb",
+  "seed": 20261013,
+  "task": {
+    "target": "any_component_logged_failure",
+    "target_column": "y_24h_any",
+    "horizon_hours": 24,
+    "interval": "(t, t + 24 hours]",
+    "feature_cutoff": "strictly_before_t",
+    "eligibility": ["complete_168h_prior_telemetry_history", "complete_24h_future_label_coverage"]
+  },
+  "split": {
+    "train_start": "2015-01-08 06:00:00",
+    "train_validation_cutoff": "2015-09-01 06:00:00",
+    "validation_test_cutoff": "2015-11-01 06:00:00",
+    "dataset_end": "2016-01-01 06:00:00",
+    "purge_hours": 168,
+    "machine_group_seed": 20261013,
+    "machine_group_fractions": {"train": 0.6, "validation": 0.2, "test": 0.2}
+  },
+  "models": {
+    "logistic_c": 0.1,
+    "logistic_max_iter": 200,
+    "tree_max_depth": 8,
+    "tree_min_samples_leaf": 100,
+    "candidate_selection": "highest_validation_average_precision",
+    "threshold_selection": "validation_max_f1_tie_break_fewer_alerts"
+  },
+  "feature_variants": ["all_features", "without_error_history", "telemetry_only", "plus_model_ablation"],
+  "simple_baseline": {
+    "name": "any_error_in_prior_24h",
+    "rule": "score=1 if sum of aggregated error-code counts in [t-24h,t) is positive, else 0",
+    "threshold": 0.5
+  },
+  "false_alarm_budget_per_machine_week": null,
+  "minimum_event_recall": null,
+  "minimum_actionable_lead_time_hours": null,
+  "candidate_false_alarm_budgets_per_machine_week": [0.05, 0.1, 0.25, 0.5, 1.0],
+  "machine_bootstrap_replicates": 100,
+  "probabilities_calibrated": false,
+  "directories": {"artifacts": "artifacts", "metrics": "metrics", "reports": "reports"},
+  "provenance": {
+    "dataset_name": "Microsoft Azure Predictive Maintenance sample (synthetic benchmark)",
+    "license_status": "Unknown from supplied archive; redistribution and deployment rights unverified"
+  }
+}
